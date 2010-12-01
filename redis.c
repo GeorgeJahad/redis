@@ -742,6 +742,9 @@ static void psubscribeCommand(redisClient *c);
 static void punsubscribeCommand(redisClient *c);
 static void publishCommand(redisClient *c);
 
+void publishExpiredKey(robj *key);
+//int pubsubPublishMessage(robj *channel, robj *message);
+
 /*================================= Globals ================================= */
 
 /* Global vars */
@@ -1531,6 +1534,7 @@ static int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientD
                     (key->storage == REDIS_VM_SWAPPING ||
                      key->storage == REDIS_VM_LOADING)) continue;
                 if (now > t) {
+		    publishExpiredKey(dictGetEntryKey(de));
                     deleteKey(db,dictGetEntryKey(de));
                     expired++;
                     server.stat_expiredkeys++;
@@ -7428,6 +7432,7 @@ static int expireIfNeeded(redisDb *db, robj *key) {
     /* Delete the key */
     dictDelete(db->expires,key);
     server.stat_expiredkeys++;
+    publishExpiredKey(key);
     return dictDelete(db->dict,key) == DICT_OK;
 }
 
@@ -7442,6 +7447,7 @@ static int deleteIfVolatile(redisDb *db, robj *key) {
     server.dirty++;
     server.stat_expiredkeys++;
     dictDelete(db->expires,key);
+    publishExpiredKey(key);
     return dictDelete(db->dict,key) == DICT_OK;
 }
 
@@ -8247,6 +8253,7 @@ static void freeMemoryIfNeeded(void) {
                         minttl = t;
                     }
                 }
+		publishExpiredKey(minkey);
                 deleteKey(server.db+j,minkey);
                 server.stat_expiredkeys++;
             }
@@ -11015,6 +11022,17 @@ static void setupSigSegvAction(void) {
 }
 #endif /* HAVE_BACKTRACE */
 
+void publishExpiredKey(robj *key)
+{
+    static robj *expireChannel;
+    static int first = TRUE;
+    
+    if (first) {
+      first = FALSE;
+      expireChannel = createStringObject("redis-expired-keys",strlen("redis-expired-keys"));
+    }
+    pubsubPublishMessage(expireChannel,key);
+}
 
 
 /* The End */
