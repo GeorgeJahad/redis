@@ -27,7 +27,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define REDIS_VERSION "2.0.4"
+#define REDIS_VERSION "2.0.4-publish-expired-keys"
 
 #include "fmacros.h"
 #include "config.h"
@@ -742,7 +742,7 @@ static void psubscribeCommand(redisClient *c);
 static void punsubscribeCommand(redisClient *c);
 static void publishCommand(redisClient *c);
 
-void publishExpiredKey(robj *key);
+void publishExpiredKey(redisDb *db, robj *key);
 //int pubsubPublishMessage(robj *channel, robj *message);
 
 /*================================= Globals ================================= */
@@ -1534,7 +1534,7 @@ static int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientD
                     (key->storage == REDIS_VM_SWAPPING ||
                      key->storage == REDIS_VM_LOADING)) continue;
                 if (now > t) {
-		    publishExpiredKey(dictGetEntryKey(de));
+		    publishExpiredKey(db, dictGetEntryKey(de));
                     deleteKey(db,dictGetEntryKey(de));
                     expired++;
                     server.stat_expiredkeys++;
@@ -7432,7 +7432,7 @@ static int expireIfNeeded(redisDb *db, robj *key) {
     /* Delete the key */
     dictDelete(db->expires,key);
     server.stat_expiredkeys++;
-    publishExpiredKey(key);
+    publishExpiredKey(db, key);
     return dictDelete(db->dict,key) == DICT_OK;
 }
 
@@ -7447,7 +7447,7 @@ static int deleteIfVolatile(redisDb *db, robj *key) {
     server.dirty++;
     server.stat_expiredkeys++;
     dictDelete(db->expires,key);
-    publishExpiredKey(key);
+    publishExpiredKey(db, key);
     return dictDelete(db->dict,key) == DICT_OK;
 }
 
@@ -8253,7 +8253,7 @@ static void freeMemoryIfNeeded(void) {
                         minttl = t;
                     }
                 }
-		publishExpiredKey(minkey);
+		publishExpiredKey(server.db+j, minkey);
                 deleteKey(server.db+j,minkey);
                 server.stat_expiredkeys++;
             }
@@ -11022,18 +11022,22 @@ static void setupSigSegvAction(void) {
 }
 #endif /* HAVE_BACKTRACE */
 
-void publishExpiredKey(robj *key)
-{
+void publishExpiredKey(redisDb *db, robj *key) {
     static robj *expireChannel;
     static int first = TRUE;
-    
+    robj * val;
     if (first) {
       first = FALSE;
-      expireChannel = createStringObject("redis-expired-keys",strlen("redis-expired-keys"));
+      expireChannel = createStringObject("redis-expired-keys", strlen("redis-expired-keys"));
     }
-    pubsubPublishMessage(expireChannel,key);
-}
+    val = lookupKey(db,key);
+    if (val) {
+      pubsubPublishMessage(expireChannel,expireChannel);
+      pubsubPublishMessage(expireChannel,key);
+      pubsubPublishMessage(expireChannel,val);
+    }
 
+}
 
 /* The End */
 
