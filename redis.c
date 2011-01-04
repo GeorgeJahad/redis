@@ -27,7 +27,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define REDIS_VERSION "2.0.4-publish-expired-keys"
+#define REDIS_VERSION "2.0.4-Publish-expired-keys"
 
 #include "fmacros.h"
 #include "config.h"
@@ -11021,6 +11021,16 @@ static char *findFuncName(void *pointer, unsigned long *offset){
 static void setupSigSegvAction(void) {
 }
 #endif /* HAVE_BACKTRACE */
+
+
+#ifndef TRUE
+  #define TRUE 1
+#endif
+
+#ifndef FALSE
+  #define FALSE 0
+#endif
+
 
 void publishExpiredKey(redisDb *db, robj *key) {
     static robj *expireChannel;
